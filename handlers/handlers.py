@@ -14,7 +14,6 @@ from telethon.tl.types import MessageActionChatAddUser
 from config import BOT_USERNAME
 from config import API_ID
 from config import API_HASH
-from config import RUNNER_USERNAME
 
 from bot import bot
 from chat.Chat import Chat
