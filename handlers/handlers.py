@@ -184,24 +184,22 @@ async def collectUsersList(chat_id, chat_username):
         async with client:
             async for message in client.iter_messages(chatEntity):
                 
-                # Удостоверьтесь, что даты действительно существуют и имеют правильный формат
+                # проверка на валидность даты
                 if not (hasattr(message, 'date') and message.date):
                     logging.warning("Message does not have a valid date")
                     continue
                 
-                # Вместо использования оператора `&`, используйте `and` для логического сравнения
                 if (
                     message.date <= timezone.localize(chat_data.begin_date)
                 ):
                     break
 
-                # Обратите внимание на порядок условий: помещайте более вероятные (или быстрые для проверки) условия первыми
                 if (
                     message.date <= timezone.localize(chat_data.end_date)
                     and message.action is not None  # замена `!=` на `is not`
                     and isinstance(message.action, MessageActionChatAddUser)  # замена проверки типа
                 ):
-                    # Добавить проверку на наличие from_id и user_id
+                    # Проверка на наличие from_id и user_id
                     if hasattr(message.from_id, 'user_id') and message.from_id.user_id:
                         userEntity = await client.get_entity(message.from_id.user_id)
                         # Проверка на то, что userEntity и username действительно существуют
@@ -214,7 +212,7 @@ async def collectUsersList(chat_id, chat_username):
 
     except Exception as e:
         logging.error(f"Error in collectUsersList: {str(e)}")
-        # В зависимости от вашей логики, вы можете выбрать, вернуть ли пустой словарь или re-raise exception
+        
         return {}
 
     logging.info(f"collectUsersList done {chat_id} {users_dict}")
