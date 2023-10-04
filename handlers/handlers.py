@@ -1,6 +1,6 @@
 from datetime import datetime
 import pytz
-
+import logging
 from aiogram import Router
 from aiogram.types import Message, InlineKeyboardButton, CallbackQuery
 from aiogram.types.input_file import FSInputFile
@@ -16,10 +16,13 @@ from config import API_ID
 from config import API_HASH
 
 from bot import bot
-from chat.Chat import Chat
+from chat.сhat import Chat
 
 router = Router()
 client = TelegramClient('anon', API_ID, API_HASH)
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s',
+                    filename='bot_log.log')
 
 enterBeginText = "Привет. Я могу забанить юзеров, добавленных в чат в заданный период. Удобно чтоб массово почистить от ботов\nПришли в ответ на это сообщение (именно реплаем) дату и время с какого удалить.\nФормат: дд.мм.гг чч.мм\nНапример:\n01.10.23 16.50"
 notAdminText = "Я общаюсь только с админами"
@@ -39,14 +42,13 @@ chats = {}
 )
 async def startCommand(message: Message):
     chat_id = message.chat.id
-    print("startCommand run", chat_id, datetime.now())
+    logging.info(f"startCommand run {chat_id} {datetime.now()}")
     await client.start()
 
     if chat_id not in chats:
         chat = Chat(chat_id)
         chat_admins = await bot.get_chat_administrators(message.chat.id)
-        for admin in chat_admins:
-            chat.admins.append(admin.user.id)
+        chat.admins = [admin.user.id for admin in chat_admins]
         chats[chat_id] = chat
 
     if isAdmin(message):
@@ -63,8 +65,8 @@ async def startCommand(message: Message):
 async def beginTime(message: Message):
     if isAdmin(message):
         try:
-            beginDate = datetime.strptime(message.text, '%d.%m.%y %H.%M')
-            chats[message.chat.id].beginDate = beginDate
+            #setter для установки даты
+            chats[message.chat.id].begin_date = datetime.strptime(message.text, '%d.%m.%y %H.%M')
             await message.answer(enterEndText)
             await bot.delete_message(message.chat.id, message.reply_to_message.message_id)
         except ValueError:
@@ -83,7 +85,7 @@ async def endTime(message: Message):
         try:
             chat_id = message.chat.id
             endDate = datetime.strptime(message.text, '%d.%m.%y %H.%M')
-            chats[chat_id].endDate = endDate
+            chats[chat_id].end_date = endDate
             
             builder = InlineKeyboardBuilder()
             builder.add(InlineKeyboardButton(
@@ -94,7 +96,7 @@ async def endTime(message: Message):
                 text=cancelButtonText,
                 callback_data="cancel")
             )
-            text = confirmText + "\nс  " + str(chats[chat_id].beginDate) + "\nпо " + str(chats[chat_id].endDate) + "\nПравильно?"
+            text = confirmText + "\nс  " + str(chats[chat_id].begin_date) + "\nпо " + str(chats[chat_id].end_date) + "\nПравильно?"
             
             await message.answer(text, reply_markup=builder.as_markup())
             await bot.delete_message(message.chat.id, message.reply_to_message.message_id)
@@ -122,7 +124,7 @@ async def confirmBan(callback: CallbackQuery):
                 await callback.message.answer_document(file, None, caption)
         except Exception as e:
             await callback.message.answer("Ошибка " + str(e))
-            print(e)
+            logging.error(e)
     else:
         await callback.message.reply(notAdminText)
     await callback.answer()
@@ -139,40 +141,85 @@ async def cancel(callback: CallbackQuery):
 
 
 async def banUsersList(chat_id, users_list):
-    print("banUsersList run", chat_id)
+    logging.info(f"banUsersList run {chat_id}")
 
     bannedCounter = 0
     errorCounter = 0
-    f = open("ban_list" + str(chat_id) + ".txt", "w")
-    for user_id in users_list:
-        banned: bool = await bot.ban_chat_member(chat_id, user_id)
-        if banned:
-            f.write("@" + str(users_list[user_id]) + " - banned\n")
-            bannedCounter += 1
-        else:
-            f.write("@" + str(users_list[user_id]) + " - error\n")
-            errorCounter += 1
-    f.close()
+    
+    with open(f"ban_list{chat_id}.txt", "w") as f:
+        for user_id in users_list:
+            banned: bool = await bot.ban_chat_member(chat_id, user_id)
+            if banned:
+                f.write(f"@{users_list[user_id]} - banned\n")
+                bannedCounter += 1
+            else:
+                f.write(f"@{users_list[user_id]} - error\n")
+                errorCounter += 1
+    
     counter = [bannedCounter, errorCounter]
-    print("banUsersList done", chat_id, counter)
+    logging.info(f"banUsersList done {chat_id} {counter}")
 
     return counter
 
 async def collectUsersList(chat_id, chat_username):
-    print("collectUsersList run", chat_id, chat_username)
-    timezone = pytz.timezone("Europe/Moscow")
-    users_dict = {}
-    chatEntity = await client.get_entity(chat_username)
+    logging.info(f"collectUsersList run {chat_id} {chat_username}")
     
-    async with client:
-        async for message in client.iter_messages(chatEntity):
-            if message.date <= timezone.localize(chats[chat_id].beginDate):
-                break         
-            if (message.date <= timezone.localize(chats[chat_id].endDate)) & (message.action != None) & (type(message.action) is MessageActionChatAddUser):
-                userEntity = await client.get_entity(message.from_id.user_id)
-                users_dict[message.from_id.user_id] = userEntity.username
-    print("collectUsersList done", chat_id, users_dict)
+    # Проверка на None перед использованием chat_username
+    if chat_username is None:
+        logging.error("chat_username is None")
+        return {}
+
+    try:
+        timezone = pytz.timezone("Europe/Moscow")
+        users_dict = {}
+        
+        # Проверка на None и типы данных для chat_id в словаре chats
+        chat_data = chats.get(chat_id)
+        if chat_data is None or not hasattr(chat_data, 'begin_date') or not hasattr(chat_data, 'end_date'):
+            logging.error(f"Invalid chat data for chat_id: {chat_id}")
+            return {}
+        
+        chatEntity = await client.get_entity(chat_username)
+
+        async with client:
+            async for message in client.iter_messages(chatEntity):
+                
+                # Удостоверьтесь, что даты действительно существуют и имеют правильный формат
+                if not (hasattr(message, 'date') and message.date):
+                    logging.warning("Message does not have a valid date")
+                    continue
+                
+                # Вместо использования оператора `&`, используйте `and` для логического сравнения
+                if (
+                    message.date <= timezone.localize(chat_data.begin_date)
+                ):
+                    break
+
+                # Обратите внимание на порядок условий: помещайте более вероятные (или быстрые для проверки) условия первыми
+                if (
+                    message.date <= timezone.localize(chat_data.end_date)
+                    and message.action is not None  # замена `!=` на `is not`
+                    and isinstance(message.action, MessageActionChatAddUser)  # замена проверки типа
+                ):
+                    # Добавить проверку на наличие from_id и user_id
+                    if hasattr(message.from_id, 'user_id') and message.from_id.user_id:
+                        userEntity = await client.get_entity(message.from_id.user_id)
+                        # Проверка на то, что userEntity и username действительно существуют
+                        if userEntity and hasattr(userEntity, 'username') and userEntity.username:
+                            users_dict[message.from_id.user_id] = userEntity.username
+                        else:
+                            logging.warning("User entity or username invalid")
+                    else:
+                        logging.warning("Message does not have a valid from_id or user_id")
+
+    except Exception as e:
+        logging.error(f"Error in collectUsersList: {str(e)}")
+        # В зависимости от вашей логики, вы можете выбрать, вернуть ли пустой словарь или re-raise exception
+        return {}
+
+    logging.info(f"collectUsersList done {chat_id} {users_dict}")
     return users_dict
+
 
 
 def isAdmin(message):
