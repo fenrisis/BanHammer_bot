@@ -1,4 +1,5 @@
-BOT_USERNAME = " "
-BOT_TOKEN = " "
-API_ID = 0
-API_HASH = " "
+BOT_USERNAME = ""
+BOT_TOKEN = ""
+API_ID = 00
+API_HASH = ""
+PHONE_NUMBER = ""
