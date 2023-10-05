@@ -7,19 +7,15 @@ from aiogram.types.input_file import FSInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters import Command
 from aiogram import F
-
-from telethon import TelegramClient
-from telethon.tl.types import MessageActionChatAddUser
-
-from config import BOT_USERNAME
-from config import API_ID
-from config import API_HASH
+from telethon.tl.types import MessageActionChatAddUser 
+from config import API_ID, API_HASH, PHONE_NUMBER, BOT_USERNAME
+from async_telethon import AsyncTelethonClient  
 
 from bot import bot
 from chat.сhat import Chat
 
 router = Router()
-client = TelegramClient('anon', API_ID, API_HASH)
+async_telethon_client = AsyncTelethonClient(API_ID, API_HASH, PHONE_NUMBER)
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s',
                     filename='bot_log.log')
@@ -43,7 +39,7 @@ chats = {}
 async def startCommand(message: Message):
     chat_id = message.chat.id
     logging.info(f"startCommand run {chat_id} {datetime.now()}")
-    await client.start()
+    await async_telethon_client.start()
 
     if chat_id not in chats:
         chat = Chat(chat_id)
@@ -179,29 +175,31 @@ async def collectUsersList(chat_id, chat_username):
             logging.error(f"Invalid chat data for chat_id: {chat_id}")
             return {}
         
-        chatEntity = await client.get_entity(chat_username)
+        chatEntity = await async_telethon_client.get_entity(chat_username)
 
-        async with client:
-            async for message in client.iter_messages(chatEntity):
+        async with async_telethon_client:
+            async for message in async_telethon_client.iter_messages(chatEntity):
                 
-                # проверка на валидность даты
+                # Удостоверьтесь, что даты действительно существуют и имеют правильный формат
                 if not (hasattr(message, 'date') and message.date):
                     logging.warning("Message does not have a valid date")
                     continue
                 
+                # Вместо использования оператора `&`, используйте `and` для логического сравнения
                 if (
                     message.date <= timezone.localize(chat_data.begin_date)
                 ):
                     break
 
+                # Обратите внимание на порядок условий: помещайте более вероятные (или быстрые для проверки) условия первыми
                 if (
                     message.date <= timezone.localize(chat_data.end_date)
                     and message.action is not None  # замена `!=` на `is not`
                     and isinstance(message.action, MessageActionChatAddUser)  # замена проверки типа
                 ):
-                    # Проверка на наличие from_id и user_id
+                    # Добавить проверку на наличие from_id и user_id
                     if hasattr(message.from_id, 'user_id') and message.from_id.user_id:
-                        userEntity = await client.get_entity(message.from_id.user_id)
+                        userEntity = await async_telethon_client.get_entity(message.from_id.user_id)
                         # Проверка на то, что userEntity и username действительно существуют
                         if userEntity and hasattr(userEntity, 'username') and userEntity.username:
                             users_dict[message.from_id.user_id] = userEntity.username
@@ -212,7 +210,7 @@ async def collectUsersList(chat_id, chat_username):
 
     except Exception as e:
         logging.error(f"Error in collectUsersList: {str(e)}")
-        
+        # В зависимости от вашей логики, вы можете выбрать, вернуть ли пустой словарь или re-raise exception
         return {}
 
     logging.info(f"collectUsersList done {chat_id} {users_dict}")
