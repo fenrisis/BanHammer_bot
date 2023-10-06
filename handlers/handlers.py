@@ -160,7 +160,7 @@ async def banUsersList(chat_id, users_list):
 async def collectUsersList(chat_id, chat_username):
     logging.info(f"collectUsersList run {chat_id} {chat_username}")
     
-    # Проверка на None перед использованием chat_username
+    
     if chat_username is None:
         logging.error("chat_username is None")
         return {}
@@ -180,18 +180,18 @@ async def collectUsersList(chat_id, chat_username):
         async with async_telethon_client:
             async for message in async_telethon_client.iter_messages(chatEntity):
                 
-                # Удостоверьтесь, что даты действительно существуют и имеют правильный формат
+                
                 if not (hasattr(message, 'date') and message.date):
                     logging.warning("Message does not have a valid date")
                     continue
                 
-                # Вместо использования оператора `&`, используйте `and` для логического сравнения
+                
                 if (
                     message.date <= timezone.localize(chat_data.begin_date)
                 ):
                     break
 
-                # Обратите внимание на порядок условий: помещайте более вероятные (или быстрые для проверки) условия первыми
+                
                 if (
                     message.date <= timezone.localize(chat_data.end_date)
                     and message.action is not None  # замена `!=` на `is not`
@@ -210,7 +210,7 @@ async def collectUsersList(chat_id, chat_username):
 
     except Exception as e:
         logging.error(f"Error in collectUsersList: {str(e)}")
-        # В зависимости от вашей логики, вы можете выбрать, вернуть ли пустой словарь или re-raise exception
+        
         return {}
 
     logging.info(f"collectUsersList done {chat_id} {users_dict}")
